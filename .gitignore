@@ -5,8 +5,6 @@ __pycache__/
 # OS
 .DS_Store
 
-# Output (generated, not tracked)
-*.fasta
-*.tsv
-*.report.*
-*.qc_report.*
+# Data and output (too large for git, not tracked)
+data/
+output/
