@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Output (generated, not tracked)
+*.fasta
+*.tsv
+*.report.*
+*.qc_report.*
