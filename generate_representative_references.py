@@ -229,15 +229,38 @@ def cluster_sequences(aln_seqs, threshold=CLUSTER_IDENTITY_THRESHOLD):
     return clusters
 
 
-def select_medoid(aln_seqs, cluster_ids):
-    """Select the medoid: sequence with minimum average distance to all others."""
+MIN_MEDOID_LENGTH = 6500  # Minimum ungapped length for a medoid candidate
+
+
+def select_medoid(aln_seqs, cluster_ids, ungapped_lengths=None,
+                  min_length=MIN_MEDOID_LENGTH):
+    """Select the medoid: sequence with minimum average distance to all others.
+
+    If ``ungapped_lengths`` is provided, sequences shorter than ``min_length``
+    are only chosen as a last resort (when no longer sequence exists in the
+    cluster). Among sequences meeting the length threshold, the one with the
+    lowest average distance to all cluster members is selected.
+    """
     if len(cluster_ids) == 1:
         return cluster_ids[0]
 
-    best_id = cluster_ids[0]
+    # Partition cluster into length-qualified and short candidates
+    if ungapped_lengths:
+        qualified = [sid for sid in cluster_ids
+                     if ungapped_lengths.get(sid, 0) >= min_length]
+        short = [sid for sid in cluster_ids
+                 if ungapped_lengths.get(sid, 0) < min_length]
+    else:
+        qualified = list(cluster_ids)
+        short = []
+
+    # Prefer qualified candidates; fall back to short only if none qualified
+    candidates = qualified if qualified else short
+
+    best_id = candidates[0]
     best_avg_dist = float("inf")
 
-    for sid in cluster_ids:
+    for sid in candidates:
         dists = [1 - aln_identity(aln_seqs[sid], aln_seqs[other])
                  for other in cluster_ids if other != sid]
         avg_dist = np.mean(dists) if dists else 0
@@ -340,6 +363,9 @@ Example:
                         help="Also exclude mediocre-quality sequences (default: only exclude bad)")
     parser.add_argument("--output-prefix-label", default="MAPREF",
                         help="Label prefix for output FASTA headers (default: MAPREF)")
+    parser.add_argument("--min-medoid-length", type=int, default=MIN_MEDOID_LENGTH,
+                        help=f"Minimum ungapped length for medoid selection (default: {MIN_MEDOID_LENGTH}bp). "
+                             "If the best medoid is shorter, the closest longer sequence is chosen instead.")
     args = parser.parse_args()
 
     output_path = Path(args.output)
@@ -443,10 +469,13 @@ Example:
         clusters = cluster_sequences(aln_seqs, args.cluster_threshold)
         print(f"  Clustered into {len(clusters)} groups at {args.cluster_threshold*100:.1f}% identity")
 
+        # Build ungapped length map for medoid selection (prefer ≥6500bp)
+        ungapped_lengths = {sid: len(seq) for sid, seq in seqs_subset.items()}
+
         # Select medoid per cluster
         medoids = []
         for ci, cluster in enumerate(clusters, 1):
-            medoid_id = select_medoid(aln_seqs, cluster)
+            medoid_id = select_medoid(aln_seqs, cluster, ungapped_lengths)
             medoid_aln = aln_seqs[medoid_id]
             medoid_seq = ungapped_seq(medoid_aln)
             medoids.append((medoid_id, medoid_seq, len(cluster), aln_seqs[medoid_id]))
